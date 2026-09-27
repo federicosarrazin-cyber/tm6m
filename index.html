@@ -232,7 +232,8 @@
   <div class="wrap2">
     <button class="abtn danger" id="nuevo">Nuevo</button>
     <button class="abtn ghost" id="guardar">Guardar</button>
-    <button class="abtn" id="pdf">📄 Guardar informe</button>
+    <button class="abtn" id="pdf">📄 Descargar informe</button>
+    <button class="abtn" id="drive">☁️ Guardar en Drive</button>
   </div>
 </div>
 
@@ -558,24 +559,45 @@ function fnameBase(){
   const fch=$('fecha').value||new Date().toISOString().slice(0,10);
   return 'TM6M_'+ap+'_'+fch;
 }
-$('pdf').onclick=async ()=>{
+var DRIVE_URL='https://script.google.com/macros/s/AKfycbxfB8UqfcJ6K9PRmvLjHypBKzwZz2F3vRaK7nDUNMRbmtQNHwYeiNB5cpkR8ZBTegZH4g/exec';
+var DRIVE_SECRET='tm6m2026sarrazin';
+async function reportCanvas(){
   buildReport();
-  const dl=await getDownloads();
-  if(dl && window.html2canvas){
-    const rep=$('report'); rep.classList.add('shot'); flash('Generando informe…');
-    try{
-      const canvas=await html2canvas(rep,{scale:2, backgroundColor:'#ffffff', windowWidth:800});
-      rep.classList.remove('shot');
-      canvas.toBlob(async (b)=>{
-        if(!b){ flash('No se pudo generar la imagen'); return; }
-        try{ await dl.save({filename:fnameBase()+'.png', data:b}); flash('Informe guardado ✓'); }
-        catch(err){ flash(err&&err.code==='declined'?'Cancelado':'No se pudo guardar ('+((err&&err.code)||'error')+')'); }
-      },'image/png');
-    }catch(e){ rep.classList.remove('shot'); flash('Error al generar la imagen'); }
-  } else {
-    const prev=document.title; document.title=fnameBase();
-    setTimeout(()=>{ window.print(); setTimeout(()=>{document.title=prev;},1500); },150);
-  }
+  const rep=$('report'); rep.classList.add('shot');
+  try{
+    const canvas=await html2canvas(rep,{scale:2, backgroundColor:'#ffffff', windowWidth:800});
+    rep.classList.remove('shot');
+    return canvas;
+  }catch(e){ rep.classList.remove('shot'); throw e; }
+}
+function blobToB64(b){ return new Promise(function(res,rej){ const r=new FileReader(); r.onload=function(){ res(String(r.result).split(',')[1]); }; r.onerror=rej; r.readAsDataURL(b); }); }
+$('pdf').onclick=async ()=>{
+  flash('Generando informe…');
+  try{
+    const c=await reportCanvas();
+    c.toBlob((b)=>{
+      if(!b){ flash('No se pudo generar la imagen'); return; }
+      const url=URL.createObjectURL(b);
+      const a=document.createElement('a'); a.href=url; a.download=fnameBase()+'.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),5000);
+      flash('Informe descargado ✓');
+    },'image/png');
+  }catch(e){ flash('Error al generar la imagen'); }
+};
+$('drive').onclick=async ()=>{
+  flash('Subiendo a Drive…');
+  try{
+    const c=await reportCanvas();
+    c.toBlob(async (b)=>{
+      if(!b){ flash('No se pudo generar la imagen'); return; }
+      try{
+        const b64=await blobToB64(b);
+        await fetch(DRIVE_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({secret:DRIVE_SECRET,filename:fnameBase()+'.png',mimeType:'image/png',dataB64:b64})});
+        flash('Guardado en Drive ✓');
+      }catch(err){ flash('No se pudo subir a Drive (revisá internet)'); }
+    },'image/png');
+  }catch(e){ flash('Error al generar la imagen'); }
 };
 
 /* ---------- Init ---------- */
